@@ -7,7 +7,7 @@ import {
   type ScenarioRecord,
 } from '../../core/scenarioStore'
 import type { LandscapeConfig } from '../../types/landscape'
-import type { ConnectivityMetrics, StructuralMetrics, TurfMetrics } from '../../types/metrics'
+import type { ConnectivityMetrics, FragmentationMetrics, StructuralMetrics, TurfMetrics } from '../../types/metrics'
 import type { ScoreBreakdown } from '../../types/scoring'
 
 export function ScenarioHistoryPanel({
@@ -15,12 +15,14 @@ export function ScenarioHistoryPanel({
   turf,
   structural,
   connectivity,
+  fragmentation,
   score,
 }: {
   config: LandscapeConfig
   turf: TurfMetrics
   structural: StructuralMetrics
   connectivity: ConnectivityMetrics
+  fragmentation: FragmentationMetrics
   score: ScoreBreakdown
 }) {
   const [records, setRecords] = useState<ScenarioRecord[]>([])
@@ -31,7 +33,7 @@ export function ScenarioHistoryPanel({
   }, [])
 
   const handleSave = () => {
-    const updated = saveScenarioRecord(config, turf, structural, connectivity, score)
+    const updated = saveScenarioRecord(config, turf, structural, connectivity, fragmentation, score)
     setRecords(updated)
     setSavedFlash(true)
     window.setTimeout(() => setSavedFlash(false), 1200)

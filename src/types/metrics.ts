@@ -45,3 +45,21 @@ export interface ConnectivityMetrics {
   treePc: number
   patches: ConnectivityPatch[]
 }
+
+export interface FragmentationLayerMetrics {
+  patchCount: number
+  patchDensity: number
+  edgeDensity: number
+  largestPatchIndex: number
+  meanPatchAreaM2: number
+  fragmentationIndex: number
+}
+
+export interface FragmentationMetrics {
+  patchDensityUnit: string
+  edgeDensityUnit: string
+  turf: FragmentationLayerMetrics
+  shrub: FragmentationLayerMetrics
+  tree: FragmentationLayerMetrics
+  overall: FragmentationLayerMetrics
+}

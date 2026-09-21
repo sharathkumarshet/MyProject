@@ -7,6 +7,7 @@ import { generateLandscape } from './core/landscapeGenerator'
 import { scoreLandscape } from './core/scoring/scoringEngine'
 import { computeStructuralMetrics, computeTurfMetrics } from './core/metrics/structuralMetrics'
 import { computeConnectivity } from './core/metrics/connectivity'
+import { computeFragmentation } from './core/metrics/fragmentationMetrics'
 import { getPcFluxClass } from './core/metrics/pcFluxClasses'
 import { HEIGHT_BANDS } from './core/voxel/bands'
 import { MetricsDashboard } from './components/metrics/MetricsDashboard'
@@ -306,6 +307,7 @@ function App() {
   const structural = useMemo(() => computeStructuralMetrics(generated, config.width, config.length), [generated, config.width, config.length])
   const turf = useMemo(() => computeTurfMetrics(generated, config.width, config.length), [generated, config.width, config.length])
   const connectivity = useMemo(() => computeConnectivity(generated, config.width, config.length), [generated, config.width, config.length])
+  const fragmentation = useMemo(() => computeFragmentation(generated, config.width, config.length), [generated, config.width, config.length])
 
   const treeHighlightLevels = useMemo(() => {
     const levels: (PcFluxLevel | undefined)[] = new Array(generated.trees.length).fill(undefined)
@@ -407,6 +409,7 @@ function App() {
                 turf={turf}
                 structural={structural}
                 connectivity={connectivity}
+                fragmentation={fragmentation}
                 score={score}
               />
 
@@ -414,6 +417,7 @@ function App() {
                 structural={structural}
                 turf={turf}
                 connectivity={connectivity}
+                fragmentation={fragmentation}
                 highlightLevel={highlightLevel}
                 onToggleHighlight={toggleHighlight}
               />

@@ -1,5 +1,5 @@
 import type { LandscapeConfig } from '../types/landscape'
-import type { ConnectivityMetrics, StructuralMetrics, TurfMetrics } from '../types/metrics'
+import type { ConnectivityMetrics, FragmentationLayerMetrics, FragmentationMetrics, StructuralMetrics, TurfMetrics } from '../types/metrics'
 import type { ScoreBreakdown } from '../types/scoring'
 
 const STORAGE_KEY = 'scenario-history-v1'
@@ -17,6 +17,7 @@ export interface ScenarioRecord {
     treePc: number
     patchCount: number
   }
+  fragmentation: FragmentationMetrics
   score: {
     total: number
     percentage: number
@@ -47,6 +48,7 @@ export function saveScenarioRecord(
   turf: TurfMetrics,
   structural: StructuralMetrics,
   connectivity: ConnectivityMetrics,
+  fragmentation: FragmentationMetrics,
   score: ScoreBreakdown,
 ): ScenarioRecord[] {
   const record: ScenarioRecord = {
@@ -62,6 +64,14 @@ export function saveScenarioRecord(
       treePc: connectivity.treePc,
       patchCount: connectivity.patches.length,
     },
+    fragmentation: {
+      patchDensityUnit: fragmentation.patchDensityUnit,
+      edgeDensityUnit: fragmentation.edgeDensityUnit,
+      turf: { ...fragmentation.turf },
+      shrub: { ...fragmentation.shrub },
+      tree: { ...fragmentation.tree },
+      overall: { ...fragmentation.overall },
+    },
     score: { total: score.total, percentage: score.percentage },
   }
   const records = [...readAll(), record]
@@ -72,6 +82,20 @@ export function saveScenarioRecord(
 export function clearScenarioHistory(): ScenarioRecord[] {
   writeAll([])
   return []
+}
+
+function fragmentationCsvColumns(
+  label: string,
+  pick: (r: ScenarioRecord) => FragmentationLayerMetrics,
+): { header: string; get: (r: ScenarioRecord) => string | number }[] {
+  return [
+    { header: `${label} NP (patch count)`, get: (r) => pick(r).patchCount },
+    { header: `${label} PD (patches/100m2)`, get: (r) => pick(r).patchDensity.toFixed(4) },
+    { header: `${label} ED (m/m2)`, get: (r) => pick(r).edgeDensity.toFixed(4) },
+    { header: `${label} LPI (%)`, get: (r) => pick(r).largestPatchIndex.toFixed(2) },
+    { header: `${label} AREA_MN (m2)`, get: (r) => pick(r).meanPatchAreaM2.toFixed(2) },
+    { header: `${label} FFI (0-1)`, get: (r) => pick(r).fragmentationIndex.toFixed(3) },
+  ]
 }
 
 const CSV_COLUMNS: { header: string; get: (r: ScenarioRecord) => string | number }[] = [
@@ -110,6 +134,10 @@ const CSV_COLUMNS: { header: string; get: (r: ScenarioRecord) => string | number
   { header: 'Connectivity - shrubs only (%)', get: (r) => (r.connectivity.shrubPc * 100).toFixed(2) },
   { header: 'Connectivity - trees only (%)', get: (r) => (r.connectivity.treePc * 100).toFixed(2) },
   { header: 'Connectivity patch count', get: (r) => r.connectivity.patchCount },
+  ...fragmentationCsvColumns('Turf', (r) => r.fragmentation.turf),
+  ...fragmentationCsvColumns('Shrub', (r) => r.fragmentation.shrub),
+  ...fragmentationCsvColumns('Tree', (r) => r.fragmentation.tree),
+  ...fragmentationCsvColumns('Overall', (r) => r.fragmentation.overall),
   { header: 'Score total', get: (r) => r.score.total },
   { header: 'Score (%)', get: (r) => r.score.percentage },
 ]

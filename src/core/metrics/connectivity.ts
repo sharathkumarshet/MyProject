@@ -9,9 +9,9 @@ const FLOYD_WARSHALL_CAP = 300
 // Only the largest N patches get a real (expensive) dPC value; the rest are "not tested".
 const DPC_TOP_N = 10
 
-type Layer = 'turf' | 'shrub' | 'tree' | 'all'
+export type Layer = 'turf' | 'shrub' | 'tree' | 'all'
 
-function layerMask(generated: GeneratedLandscape, layer: Layer, cols: number, rows: number): Uint8Array {
+export function layerMask(generated: GeneratedLandscape, layer: Layer, cols: number, rows: number): Uint8Array {
   if (layer === 'turf') return buildMask(generated.turfVoxels, cols, rows)
   if (layer === 'shrub') return buildMask(generated.canopyVoxels.filter((voxel) => voxel.source === 'shrub'), cols, rows)
   if (layer === 'tree') {

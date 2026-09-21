@@ -1,4 +1,12 @@
-import type { ConnectivityMetrics, PcFluxLevel, StructuralBandMetrics, StructuralMetrics, TurfMetrics } from '../../types/metrics'
+import type {
+  ConnectivityMetrics,
+  FragmentationLayerMetrics,
+  FragmentationMetrics,
+  PcFluxLevel,
+  StructuralBandMetrics,
+  StructuralMetrics,
+  TurfMetrics,
+} from '../../types/metrics'
 import { PC_FLUX_CLASSES, pcFluxClassDistribution } from '../../core/metrics/pcFluxClasses'
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -25,16 +33,44 @@ function BandCard({ title, band }: { title: string; band: StructuralBandMetrics 
   )
 }
 
+function FragmentationCard({
+  title,
+  layer,
+  patchDensityUnit,
+  edgeDensityUnit,
+}: {
+  title: string
+  layer: FragmentationLayerMetrics
+  patchDensityUnit: string
+  edgeDensityUnit: string
+}) {
+  return (
+    <div className="rounded border border-slate-700/60 bg-slate-950/30 p-2">
+      <p className="mb-1.5 text-[9px] uppercase tracking-[0.16em] text-slate-400">{title}</p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+        <StatRow label="Patches (NP)" value={String(layer.patchCount)} />
+        <StatRow label={`Patch density (${patchDensityUnit})`} value={layer.patchDensity.toFixed(3)} />
+        <StatRow label={`Edge density (${edgeDensityUnit})`} value={layer.edgeDensity.toFixed(3)} />
+        <StatRow label="Largest patch (LPI %)" value={layer.largestPatchIndex.toFixed(2)} />
+        <StatRow label="Mean patch area (m²)" value={layer.meanPatchAreaM2.toFixed(2)} />
+        <StatRow label="FFI (0-1)" value={layer.fragmentationIndex.toFixed(3)} />
+      </div>
+    </div>
+  )
+}
+
 export function MetricsDashboard({
   structural,
   turf,
   connectivity,
+  fragmentation,
   highlightLevel,
   onToggleHighlight,
 }: {
   structural: StructuralMetrics
   turf: TurfMetrics
   connectivity: ConnectivityMetrics
+  fragmentation: FragmentationMetrics
   highlightLevel: PcFluxLevel | null
   onToggleHighlight: (level: PcFluxLevel) => void
 }) {
@@ -47,6 +83,21 @@ export function MetricsDashboard({
         <div className="space-y-2">
           <BandCard title="Low vegetation (0.1-3.5 m)" band={structural.low} />
           <BandCard title="High vegetation (≥3.5 m)" band={structural.high} />
+        </div>
+      </div>
+
+      <div className="rounded border border-slate-700 bg-slate-900/40 p-3">
+        <p className="mb-2 text-[10px] uppercase tracking-[0.24em] text-emerald-300">Fragmentation</p>
+        <p className="mb-2 text-[9px] leading-snug text-slate-500">
+          NP/PD/ED/LPI/AREA_MN per layer (own binary mask); overall uses a combined turf∪shrub∪tree mask, so overall NP
+          can be less than the per-layer sum when adjacent patches merge. FFI is min-max normalized across these 4
+          layers within this scene, not an absolute score.
+        </p>
+        <div className="space-y-2">
+          <FragmentationCard title="Turf" layer={fragmentation.turf} patchDensityUnit={fragmentation.patchDensityUnit} edgeDensityUnit={fragmentation.edgeDensityUnit} />
+          <FragmentationCard title="Shrubs" layer={fragmentation.shrub} patchDensityUnit={fragmentation.patchDensityUnit} edgeDensityUnit={fragmentation.edgeDensityUnit} />
+          <FragmentationCard title="Trees" layer={fragmentation.tree} patchDensityUnit={fragmentation.patchDensityUnit} edgeDensityUnit={fragmentation.edgeDensityUnit} />
+          <FragmentationCard title="Overall (turf ∪ shrub ∪ tree)" layer={fragmentation.overall} patchDensityUnit={fragmentation.patchDensityUnit} edgeDensityUnit={fragmentation.edgeDensityUnit} />
         </div>
       </div>
 
