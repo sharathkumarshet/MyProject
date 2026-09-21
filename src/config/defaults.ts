@@ -4,6 +4,7 @@ export const DEFAULT_CONFIG: LandscapeConfig = {
   width: 60,
   length: 40,
   seed: 42,
+  scenario: 'tropical',
   treeCount: 18,
   shrubCount: 24,
   turfCoverage: 55,

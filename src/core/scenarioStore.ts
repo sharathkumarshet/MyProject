@@ -4,6 +4,24 @@ import type { ScoreBreakdown } from '../types/scoring'
 
 const STORAGE_KEY = 'scenario-history-v1'
 
+const EMPTY_FRAGMENTATION_LAYER: FragmentationLayerMetrics = {
+  patchCount: 0,
+  patchDensity: 0,
+  edgeDensity: 0,
+  largestPatchIndex: 0,
+  meanPatchAreaM2: 0,
+  fragmentationIndex: 0,
+}
+
+const EMPTY_FRAGMENTATION: FragmentationMetrics = {
+  patchDensityUnit: 'patches / 100 m²',
+  edgeDensityUnit: 'm edge / m² scene',
+  turf: EMPTY_FRAGMENTATION_LAYER,
+  shrub: EMPTY_FRAGMENTATION_LAYER,
+  tree: EMPTY_FRAGMENTATION_LAYER,
+  overall: EMPTY_FRAGMENTATION_LAYER,
+}
+
 export interface ScenarioRecord {
   id: string
   savedAt: string
@@ -29,7 +47,12 @@ function readAll(): ScenarioRecord[] {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    // Records saved before the fragmentation feature existed won't have this field — backfill so exports don't crash.
+    return parsed.map((record: ScenarioRecord) => ({
+      ...record,
+      fragmentation: record.fragmentation ?? EMPTY_FRAGMENTATION,
+    }))
   } catch {
     return []
   }
@@ -103,6 +126,7 @@ const CSV_COLUMNS: { header: string; get: (r: ScenarioRecord) => string | number
   { header: 'Width (m)', get: (r) => r.config.width },
   { header: 'Length (m)', get: (r) => r.config.length },
   { header: 'Seed', get: (r) => r.config.seed },
+  { header: 'Scenario', get: (r) => r.config.scenario ?? 'tropical' },
   { header: 'Turf coverage (%)', get: (r) => r.config.turfCoverage },
   { header: 'Shrub count', get: (r) => r.config.shrubCount },
   { header: 'Shrub pattern', get: (r) => r.config.shrubPattern },

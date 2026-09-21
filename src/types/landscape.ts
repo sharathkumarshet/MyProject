@@ -1,4 +1,4 @@
-import type { CanopyVoxel, TreeCrownShape, TurfVoxel } from './voxel'
+import type { CanopyVoxel, ShrubCrownShape, TreeCrownShape, TurfVoxel } from './voxel'
 
 export type ZoneName = 'centre' | 'left' | 'right' | 'front' | 'back' | 'perimeter' | 'other'
 
@@ -7,6 +7,7 @@ export type TreePlacement = 'centre' | 'sides' | 'perimeter' | 'random'
 export type ShrubPattern = 'clustered' | 'linear' | 'random' | 'border'
 export type BuildingPattern = 'clustered' | 'linear' | 'random'
 export type TurfPlacement = 'centre' | 'sides' | 'full-site' | 'custom'
+export type LandscapeScenario = 'tropical' | 'temperate'
 
 export interface SiteConfig {
   width: number
@@ -34,6 +35,7 @@ export interface ShrubItem {
   x: number
   y: number
   height: number
+  crownShape: ShrubCrownShape
   zone: ZoneName
 }
 
@@ -56,6 +58,7 @@ export interface BuildingItem {
 }
 
 export interface LandscapeConfig extends SiteConfig {
+  scenario: LandscapeScenario
   treeCount: number
   shrubCount: number
   turfCoverage: number

@@ -1,5 +1,5 @@
 import type { BuildingItem, GeneratedLandscape, LandscapeConfig, ShrubItem, TreeItem, TurfPatch } from '../types/landscape'
-import type { CanopyVoxel, TreeCrownShape } from '../types/voxel'
+import type { CanopyVoxel, ShrubCrownShape, TreeCrownShape } from '../types/voxel'
 import { DEFAULT_CONFIG } from '../config/defaults'
 import { createRng } from './rng'
 import { getZones } from './zones'
@@ -7,7 +7,8 @@ import { generateTreeCanopyVoxels } from './voxel/treeVoxels'
 import { generateShrubCanopyVoxels } from './voxel/shrubVoxels'
 import { generateTurfVoxels } from './voxel/turfVoxels'
 
-const CROWN_SHAPES: TreeCrownShape[] = ['mango', 'rain-tree', 'palm']
+const TROPICAL_TREE_SHAPES: TreeCrownShape[] = ['mango', 'rain-tree', 'palm']
+const TEMPERATE_TREE_SHAPES: TreeCrownShape[] = ['pine', 'oak', 'spruce']
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -72,6 +73,15 @@ function findFreeCirclePoint(
 }
 
 function treeFootprintRadius(height: number, crownShape: TreeCrownShape) {
+  if (crownShape === 'pine' || crownShape === 'spruce') {
+    const crownBase = crownShape === 'spruce' ? height * 0.15 : height * 0.25
+    const crownHeight = Math.max(0.5, height - crownBase)
+    return Math.max(1, crownHeight * (crownShape === 'spruce' ? 0.22 : 0.32))
+  }
+  if (crownShape === 'oak') {
+    const crownHeight = Math.max(0.5, height - height * 0.5)
+    return Math.min(3.4, Math.max(1.4, crownHeight * 0.9))
+  }
   const crownBase = crownShape === 'palm' ? height * 0.92 : crownShape === 'rain-tree' ? height * 0.6 : height * 0.45
   const crownHeight = Math.max(0.5, height - crownBase)
   if (crownShape === 'rain-tree') return Math.min(3.2, Math.max(1.2, crownHeight * 1.3))
@@ -79,7 +89,8 @@ function treeFootprintRadius(height: number, crownShape: TreeCrownShape) {
   return Math.min(2.6, Math.max(0.8, crownHeight * 0.55))
 }
 
-function shrubFootprintRadius(height: number) {
+function shrubFootprintRadius(height: number, crownShape: ShrubCrownShape) {
+  if (crownShape === 'pine') return Math.min(1.8, Math.max(0.5, height * 0.55))
   return Math.min(1.6, Math.max(0.4, height * 0.5))
 }
 
@@ -383,12 +394,17 @@ function generateTurfPatches(
 
 export function generateLandscape(config: Partial<LandscapeConfig> = {}): GeneratedLandscape {
   const merged: LandscapeConfig = { ...DEFAULT_CONFIG, ...config }
-  // Two independent streams: identity (height/crown/bootstrap density) is arrangement-invariant,
-  // placement (positions) is the only thing arrangement changes — keeps structural metrics stable
-  // across different layouts of the same quantity (spec 7.6).
-  const identityRng = createRng(merged.seed)
+  // Each feature owns its own identity + placement RNG stream, so adjusting one feature's count/pattern
+  // never shifts the random draws consumed by any other feature (buildings, roads, trees, shrubs, turf).
   const buildingIdentityRng = createRng(merged.seed ^ 0x85ebca6b)
-  const placementRng = createRng(merged.seed ^ 0x9e3779b9)
+  const treeIdentityRng = createRng(merged.seed ^ 0x27d4eb2f)
+  const shrubIdentityRng = createRng(merged.seed ^ 0x165667b1)
+  const turfIdentityRng = createRng(merged.seed ^ 0xd3a2646c)
+
+  const buildingPlacementRng = createRng(merged.seed ^ 0x9e3779b9)
+  const treePlacementRng = createRng(merged.seed ^ 0xc2b2ae35)
+  const shrubPlacementRng = createRng(merged.seed ^ 0xfd7046c5)
+  const turfPlacementRng = createRng(merged.seed ^ 0x1b873593)
   getZones(merged.width, merged.length)
 
   // Roads are parallel strips so they never overlap one another, and all other features avoid them.
@@ -423,7 +439,7 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
         merged.length,
         footprintW,
         footprintL,
-        placementRng,
+        buildingPlacementRng,
       )
       for (let attempt = 0; buildingOverlaps(point.x, point.y, footprintW, footprintL, buildings, roads) && attempt < 32; attempt += 1) {
         point = patternBuildings(
@@ -434,7 +450,7 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
           merged.length,
           footprintW,
           footprintL,
-          placementRng,
+          buildingPlacementRng,
         )
       }
       if (buildingOverlaps(point.x, point.y, footprintW, footprintL, buildings, roads)) {
@@ -457,15 +473,16 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
   const shrubFootprints: Array<{ x: number; y: number; radius: number }> = []
 
   // Trees are always high vegetation by definition (spec floor is 3.50m, not 3.00m).
+  const treeShapes = merged.scenario === 'temperate' ? TEMPERATE_TREE_SHAPES : TROPICAL_TREE_SHAPES
   const trees: TreeItem[] = []
   for (let i = 0; i < merged.treeCount; i += 1) {
     const pattern = merged.treePlacement ?? 'random'
-    const height = 3.5 + identityRng() * (14 - 3.5)
-    const crownShape = CROWN_SHAPES[Math.floor(identityRng() * CROWN_SHAPES.length)]
+    const height = 3.5 + treeIdentityRng() * (14 - 3.5)
+    const crownShape = treeShapes[Math.floor(treeIdentityRng() * treeShapes.length)]
     const footprintRadius = treeFootprintRadius(height, crownShape)
-    let point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, placementRng)
+    let point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng)
     for (let attempt = 0; isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, treeFootprints) && attempt < 25; attempt += 1) {
-      point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, placementRng)
+      point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng)
     }
     if (isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, treeFootprints)) {
       point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, treeFootprints) }
@@ -484,14 +501,17 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
   }
 
   // Shrub height spans bands 2-4 (0.11-3.49m) — a continuum, never one fixed band.
+  // Temperate shrub tier stays conical-only (short pine); broadleaf maple/acer would need a
+  // separate blocky-cluster canopy builder, which isn't implemented here.
+  const shrubCrownShape: ShrubCrownShape = merged.scenario === 'temperate' ? 'pine' : 'round'
   const shrubs: ShrubItem[] = []
   for (let i = 0; i < merged.shrubCount; i += 1) {
     const pattern = merged.shrubPattern ?? 'random'
-    const height = 0.11 + identityRng() * (3.49 - 0.11)
-    const footprintRadius = shrubFootprintRadius(height)
-    let point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, placementRng)
+    const height = 0.11 + shrubIdentityRng() * (3.49 - 0.11)
+    const footprintRadius = shrubFootprintRadius(height, shrubCrownShape)
+    let point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng)
     for (let attempt = 0; isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints]) && attempt < 25; attempt += 1) {
-      point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, placementRng)
+      point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng)
     }
     if (isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints])) {
       point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints]) }
@@ -501,18 +521,19 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
       x: point.x,
       y: point.y,
       height,
+      crownShape: shrubCrownShape,
       zone: point.zone,
     })
     shrubFootprints.push({ x: point.x, y: point.y, radius: footprintRadius })
   }
 
   const turfMode = merged.turfPlacement === 'custom' ? 'full-site' : merged.turfPlacement
-  const turfPatches: TurfPatch[] = generateTurfPatches(turfMode, merged.width, merged.length, merged.turfCoverage, placementRng)
+  const turfPatches: TurfPatch[] = generateTurfPatches(turfMode, merged.width, merged.length, merged.turfCoverage, turfPlacementRng)
 
   const canopyVoxels: CanopyVoxel[] = []
-  for (const tree of trees) canopyVoxels.push(...generateTreeCanopyVoxels(tree, identityRng))
-  for (const shrub of shrubs) canopyVoxels.push(...generateShrubCanopyVoxels(shrub, identityRng))
-  const turfVoxels = generateTurfVoxels(turfPatches, buildings, roads, merged.width, merged.length, identityRng)
+  for (const tree of trees) canopyVoxels.push(...generateTreeCanopyVoxels(tree, treeIdentityRng))
+  for (const shrub of shrubs) canopyVoxels.push(...generateShrubCanopyVoxels(shrub, shrubIdentityRng))
+  const turfVoxels = generateTurfVoxels(turfPatches, buildings, roads, merged.width, merged.length, turfIdentityRng)
 
   return {
     trees,

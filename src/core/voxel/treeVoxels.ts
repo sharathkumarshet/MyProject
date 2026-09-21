@@ -46,6 +46,16 @@ function crownProfile(shape: TreeCrownShape, height: number, crownBase: number) 
     }
   }
 
+  if (shape === 'oak') {
+    // Broadleaf: a bigger, bushier dome than mango — still grid-blocky, just a wider round silhouette.
+    const maxRadius = Math.min(3.4, Math.max(1.4, crownHeight * 0.9))
+    const halfHeight = crownHeight / 2
+    return (z: number) => {
+      const normalized = Math.min(1, Math.abs(z - mid) / halfHeight)
+      return maxRadius * Math.sqrt(Math.max(0, 1 - normalized * normalized))
+    }
+  }
+
   // mango: rounded/oval crown.
   const maxRadius = Math.min(2.6, Math.max(0.8, crownHeight * 0.55))
   const halfHeight = crownHeight / 2
@@ -55,13 +65,63 @@ function crownProfile(shape: TreeCrownShape, height: number, crownBase: number) 
   }
 }
 
+function coniferCrownBase(shape: 'pine' | 'spruce', height: number): number {
+  return shape === 'spruce' ? height * 0.15 : height * 0.25
+}
+
+function coniferBaseRadius(shape: 'pine' | 'spruce', crownHeight: number): number {
+  return Math.max(1, Math.round(crownHeight * (shape === 'spruce' ? 0.22 : 0.32)))
+}
+
+// Stepped pyramid: stacked 0.5m layers, each layer's footprint a smaller grid-aligned square (pine)
+// or diamond (spruce) than the one below — no curved/radial geometry, tapers to a point at the top.
+function buildConiferCanopy(tree: TreeInput, crownBase: number, shape: 'pine' | 'spruce', rng: () => number): CanopyVoxel[] {
+  const voxels: CanopyVoxel[] = []
+  const cellX = Math.round(tree.x)
+  const cellY = Math.round(tree.y)
+  const crownHeight = Math.max(SLAB, tree.height - crownBase)
+  const layerCount = Math.max(1, Math.round(crownHeight / SLAB))
+  const baseRadius = coniferBaseRadius(shape, crownHeight)
+
+  for (let layer = 0; layer < layerCount; layer += 1) {
+    const z = crownBase + layer * SLAB
+    const progress = layerCount === 1 ? 1 : layer / (layerCount - 1)
+    const radius = Math.max(0, Math.round(baseRadius * (1 - progress)))
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        const inFootprint = shape === 'pine' ? Math.max(Math.abs(dx), Math.abs(dy)) <= radius : Math.abs(dx) + Math.abs(dy) <= radius
+        if (!inFootprint) continue
+        voxels.push({
+          x: cellX + dx,
+          y: cellY + dy,
+          z,
+          count: sampleCanopyCount(rng),
+          band: classifyHeightBand(z + SLAB / 2),
+          source: 'tree-crown',
+          sourceId: tree.id,
+        })
+      }
+    }
+  }
+
+  return voxels
+}
+
 export function generateTreeCanopyVoxels(tree: TreeInput, rng: () => number): CanopyVoxel[] {
   const voxels: CanopyVoxel[] = []
   const cellX = Math.round(tree.x)
   const cellY = Math.round(tree.y)
 
   const crownBase =
-    tree.crownShape === 'palm' ? tree.height * 0.92 : tree.crownShape === 'rain-tree' ? tree.height * 0.6 : tree.height * 0.45
+    tree.crownShape === 'palm'
+      ? tree.height * 0.92
+      : tree.crownShape === 'rain-tree'
+        ? tree.height * 0.6
+        : tree.crownShape === 'oak'
+          ? tree.height * 0.5
+          : tree.crownShape === 'pine' || tree.crownShape === 'spruce'
+            ? coniferCrownBase(tree.crownShape, tree.height)
+            : tree.height * 0.45
   let topCrownZ = crownBase
 
   // Trunk: thin column of canopy voxels from the ground up to the crown base — never skipped.
@@ -75,6 +135,10 @@ export function generateTreeCanopyVoxels(tree: TreeInput, rng: () => number): Ca
       source: 'tree-trunk',
       sourceId: tree.id,
     })
+  }
+
+  if (tree.crownShape === 'pine' || tree.crownShape === 'spruce') {
+    return [...voxels, ...buildConiferCanopy(tree, crownBase, tree.crownShape, rng)]
   }
 
   const radiusAt = crownProfile(tree.crownShape, tree.height, crownBase)

@@ -8,7 +8,11 @@ export interface HeightBand {
   color: string
 }
 
-export type TreeCrownShape = 'mango' | 'rain-tree' | 'palm'
+// Tropical: mango, rain-tree, palm. Temperate: pine, oak, spruce.
+export type TreeCrownShape = 'mango' | 'rain-tree' | 'palm' | 'pine' | 'oak' | 'spruce'
+
+// Tropical shrubs stay a rounded blob; temperate shrubs are a short stepped-pyramid pine.
+export type ShrubCrownShape = 'round' | 'pine'
 
 // Canopy voxel: 1m x 1m footprint, 0.5m tall slab. Used for every non-turf plant (shrubs/trees).
 export interface CanopyVoxel {

@@ -432,6 +432,18 @@ function App() {
               </div>
 
               <div className="rounded border border-slate-700 bg-slate-900/20 p-3">
+                <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">Scenario</div>
+                <OptionTabs
+                  value={config.scenario === 'temperate' ? 'Temperate' : 'Tropical'}
+                  options={['Tropical', 'Temperate']}
+                  onChange={(value) => updateConfig('scenario', value === 'Temperate' ? 'temperate' : 'tropical')}
+                />
+                <p className="mt-2 text-[9px] leading-snug text-slate-500">
+                  Swaps only the tree/shrub voxel models (mango/rain-tree/palm ↔ pine/oak/spruce). Turf, buildings, and roads are unaffected.
+                </p>
+              </div>
+
+              <div className="rounded border border-slate-700 bg-slate-900/20 p-3">
                 <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-slate-400">Turf</div>
                 <SliderControl label="Ground coverage" value={config.turfCoverage} min={LIMITS.turfCoverage.min} max={LIMITS.turfCoverage.max} suffix=" %" onChange={(value) => updateConfig('turfCoverage', value)} />
               </div>
