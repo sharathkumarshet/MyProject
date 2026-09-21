@@ -10,6 +10,7 @@ import { computeConnectivity } from './core/metrics/connectivity'
 import { getPcFluxClass } from './core/metrics/pcFluxClasses'
 import { HEIGHT_BANDS } from './core/voxel/bands'
 import { MetricsDashboard } from './components/metrics/MetricsDashboard'
+import { ScenarioHistoryPanel } from './components/history/ScenarioHistoryPanel'
 import type { GeneratedLandscape } from './types/landscape'
 import type { PcFluxLevel } from './types/metrics'
 
@@ -401,6 +402,14 @@ function App() {
 
           <aside className="w-[300px] shrink-0 overflow-y-auto bg-[#0d1c2a] p-3 text-slate-200">
             <div className="space-y-4">
+              <ScenarioHistoryPanel
+                config={config}
+                turf={turf}
+                structural={structural}
+                connectivity={connectivity}
+                score={score}
+              />
+
               <MetricsDashboard
                 structural={structural}
                 turf={turf}
