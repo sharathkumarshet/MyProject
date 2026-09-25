@@ -11,6 +11,7 @@ import { computeFragmentation } from './core/metrics/fragmentationMetrics'
 import { getPcFluxClass } from './core/metrics/pcFluxClasses'
 import { HEIGHT_BANDS } from './core/voxel/bands'
 import { MetricsDashboard } from './components/metrics/MetricsDashboard'
+import { ScoreDashboard } from './components/score/ScoreDashboard'
 import { ScenarioHistoryPanel } from './components/history/ScenarioHistoryPanel'
 import type { GeneratedLandscape } from './types/landscape'
 import type { PcFluxLevel } from './types/metrics'
@@ -302,12 +303,12 @@ function App() {
   const [sceneResetKey, setSceneResetKey] = useState(0)
   const [highlightLevel, setHighlightLevel] = useState<PcFluxLevel | null>(null)
   const generated = useMemo(() => generateLandscape(config), [config])
-  const score = useMemo(() => scoreLandscape(config, generated), [config, generated])
 
   const structural = useMemo(() => computeStructuralMetrics(generated, config.width, config.length), [generated, config.width, config.length])
   const turf = useMemo(() => computeTurfMetrics(generated, config.width, config.length), [generated, config.width, config.length])
   const connectivity = useMemo(() => computeConnectivity(generated, config.width, config.length), [generated, config.width, config.length])
   const fragmentation = useMemo(() => computeFragmentation(generated, config.width, config.length), [generated, config.width, config.length])
+  const score = useMemo(() => scoreLandscape(connectivity, fragmentation), [connectivity, fragmentation])
 
   const treeHighlightLevels = useMemo(() => {
     const levels: (PcFluxLevel | undefined)[] = new Array(generated.trees.length).fill(undefined)
@@ -412,6 +413,8 @@ function App() {
                 fragmentation={fragmentation}
                 score={score}
               />
+
+              <ScoreDashboard score={score} />
 
               <MetricsDashboard
                 structural={structural}

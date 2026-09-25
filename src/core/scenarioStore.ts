@@ -184,9 +184,14 @@ export function downloadScenarioHistoryCsv(records: ScenarioRecord[]) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `scenario-history-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+  // Millisecond precision keeps rapid repeat exports from sharing a filename (which made the
+  // browser append its own duplicate-file suffix).
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  link.download = `scenario-history-${timestamp}.csv`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  // Revoking on the same tick as click() can race the browser's download read of the blob,
+  // truncating or corrupting the file it saves — defer revocation instead.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

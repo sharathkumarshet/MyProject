@@ -1,19 +1,9 @@
-import type { TreeSize, ZoneName } from './landscape'
-
-export type ScoreCategory = 'trees' | 'shrubs' | 'turf' | 'bonus' | 'penalties'
+export type ScoreCategory = 'connectivity' | 'fragmentation' | 'largestPatch'
 
 export interface ScoringRules {
-  treePoints: Record<TreeSize, number>
-  locationMultipliers: Record<ZoneName, number>
-  shrubPointsPerUnit: number
-  shrubDensityMultipliers: Record<'low' | 'medium' | 'high', number>
-  turfPointsPerPercent: number
-  bonusCentre: number
-  overcrowdingPenalty: number
-  overlapPenalty: number
-  insufficientSpacingPenalty: number
-  maxDensityPerSqm: number
-  minTreeSpacing: number
+  connectivityWeight: number
+  fragmentationWeight: number
+  largestPatchWeight: number
 }
 
 export interface ScoreLine {
