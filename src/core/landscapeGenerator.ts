@@ -52,15 +52,46 @@ function findFreeCirclePoint(
   radius: number,
   blockedRects: Array<{ x: number; y: number; width: number; height: number }>,
   blockedCircles: Array<{ x: number; y: number; radius: number }>,
+  preferredPoint?: { x: number; y: number },
 ) {
   const minX = radius + 0.2
   const minY = radius + 0.2
   const maxX = width - radius - 0.2
   const maxY = length - radius - 0.2
 
+  // Search outward in expanding rings from the pattern's intended point so overflow items settle nearby
+  // (staying inside their cluster/line), instead of always collapsing into whichever spot is first in raster
+  // order from the top-left corner.
+  if (preferredPoint) {
+    const step = Math.max(0.5, radius)
+    const maxRadius = Math.max(width, length)
+    for (let ring = 0; ring * step <= maxRadius; ring += 1) {
+      const ringRadius = ring * step
+      const samples = ring === 0 ? 1 : Math.max(8, Math.round(ring * 6))
+      for (let s = 0; s < samples; s += 1) {
+        const angle = (Math.PI * 2 * s) / samples
+        const x = clamp(preferredPoint.x + Math.cos(angle) * ringRadius, minX, maxX)
+        const y = clamp(preferredPoint.y + Math.sin(angle) * ringRadius, minY, maxY)
+        if (!isCircleBlocked(x, y, radius, blockedRects, blockedCircles)) {
+          return { x, y }
+        }
+      }
+    }
+  }
+
   for (let y = minY; y <= maxY; y += 1) {
     for (let x = minX; x <= maxX; x += 1) {
       if (!isCircleBlocked(x, y, radius, blockedRects, blockedCircles)) {
+        return { x, y }
+      }
+    }
+  }
+
+  // Density has genuinely exceeded what fits with clearance between items — better to let canopies sit a
+  // little close than to place one on top of a road/building, which the site plan must never allow.
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      if (!blockedRects.some((rect) => circleIntersectsRect(x, y, radius, rect, 0.25))) {
         return { x, y }
       }
     }
@@ -94,6 +125,85 @@ function shrubFootprintRadius(height: number, crownShape: ShrubCrownShape) {
   return Math.min(1.6, Math.max(0.4, height * 0.5))
 }
 
+// Number of cluster blobs to spread across the site, scaled with item count (kept small so it still reads as "clusters", not scatter).
+function clusterCount(count: number) {
+  return Math.min(6, Math.max(3, Math.round(Math.sqrt(Math.max(1, count) / 3))))
+}
+
+// Lays out cluster centres on a grid sized to the site's aspect ratio, so clusters span the full width/length
+// (including areas south of any road) instead of a handful of fixed points that only ever cover part of the site.
+function clusterCenters(width: number, length: number, count: number) {
+  const cols = Math.max(1, Math.round(Math.sqrt((count * width) / Math.max(length, 1))))
+  const rows = Math.max(1, Math.ceil(count / cols))
+  const centers: Array<{ x: number; y: number; spreadX: number; spreadY: number }> = []
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      if (centers.length >= count) break
+      centers.push({
+        x: width * ((c + 0.5) / cols),
+        y: length * ((r + 0.5) / rows),
+        spreadX: width / cols,
+        spreadY: length / rows,
+      })
+    }
+  }
+  return centers
+}
+
+function clusteredPoint(index: number, count: number, width: number, length: number, rng: () => number) {
+  const centers = clusterCenters(width, length, clusterCount(count))
+  const center = centers[index % centers.length]
+  const jitterX = (rng() - 0.5) * center.spreadX * 0.5
+  const jitterY = (rng() - 0.5) * center.spreadY * 0.5
+  return {
+    x: clamp(center.x + jitterX, 2, width - 2),
+    y: clamp(center.y + jitterY, 2, length - 2),
+    zone: 'centre' as const,
+  }
+}
+
+type RoadRect = { x: number; y: number; width: number; height: number }
+
+// Places items in a line alongside the road network (offset just off the road edge, alternating sides),
+// distributing them evenly along each road's length. Falls back to straight grid rows when there are no roads.
+function roadLinePoint(
+  roads: RoadRect[],
+  index: number,
+  count: number,
+  width: number,
+  length: number,
+  rng: () => number,
+  footprintRadius = 0.6,
+): { x: number; y: number; zone: 'left' | 'right' | 'front' | 'back' } {
+  if (roads.length > 0) {
+    const road = roads[index % roads.length]
+    const perRoad = Math.max(1, Math.ceil(count / roads.length))
+    const along = ((Math.floor(index / roads.length) + 0.5) / perRoad + rng() * 0.02) % 1
+    // Sit just clear of the road edge — enough to avoid overlapping it, not a wide roadside verge.
+    const margin = footprintRadius + 0.3 + rng() * 0.2
+    const side = index % 2 === 0 ? 1 : -1
+    const horizontal = road.width >= road.height
+
+    if (horizontal) {
+      const x = clamp(road.x + along * road.width, 2, width - 2)
+      const y = clamp(road.y + road.height / 2 + side * (road.height / 2 + margin), 2, length - 2)
+      return { x, y, zone: side > 0 ? 'back' : 'front' }
+    }
+
+    const y = clamp(road.y + along * road.height, 2, length - 2)
+    const x = clamp(road.x + road.width / 2 + side * (road.width / 2 + margin), 2, width - 2)
+    return { x, y, zone: side > 0 ? 'right' : 'left' }
+  }
+
+  const rows = Math.max(1, Math.round(Math.sqrt(count || 1)))
+  const row = Math.floor(index / rows)
+  const column = index % rows
+  const padding = 6
+  const x = padding + ((width - padding * 2) / Math.max(1, rows - 1)) * column + (rng() - 0.5) * 3
+  const y = padding + ((length - padding * 2) / Math.max(1, rows - 1)) * row + (rng() - 0.5) * 3
+  return { x: clamp(x, 2, width - 2), y: clamp(y, 2, length - 2), zone: row % 2 === 0 ? 'left' : 'right' }
+}
+
 function patternPoint(
   pattern: 'random' | 'centre' | 'sides' | 'perimeter',
   index: number,
@@ -101,20 +211,18 @@ function patternPoint(
   width: number,
   length: number,
   rng: () => number,
+  roads: RoadRect[] = [],
+  footprintRadius = 0.6,
 ) {
   const cx = width / 2
   const cy = length / 2
 
   if (pattern === 'centre') {
-    const clusterRadiusX = width * 0.18
-    const clusterRadiusY = length * 0.18
-    const angle = (Math.PI * 2 * index) / Math.max(1, count)
-    const radius = 0.25 + rng() * 0.75
-    return {
-      x: clamp(cx + Math.cos(angle) * clusterRadiusX * radius + (rng() - 0.5) * 4, 4, width - 4),
-      y: clamp(cy + Math.sin(angle) * clusterRadiusY * radius + (rng() - 0.5) * 4, 4, length - 4),
-      zone: 'centre' as const,
-    }
+    return clusteredPoint(index, count, width, length, rng)
+  }
+
+  if (pattern === 'perimeter') {
+    return roadLinePoint(roads, index, count, width, length, rng, footprintRadius)
   }
 
   if (pattern === 'sides') {
@@ -153,24 +261,6 @@ function patternPoint(
     }
   }
 
-  if (pattern === 'perimeter') {
-    const side = (index % 4) as 0 | 1 | 2 | 3
-    const inset = 5
-    const edgeX = rng() * (width - inset * 2) + inset
-    const edgeY = rng() * (length - inset * 2) + inset
-
-    if (side === 0) {
-      return { x: edgeX, y: inset + rng() * 2, zone: 'perimeter' as const }
-    }
-    if (side === 1) {
-      return { x: width - inset - rng() * 2, y: edgeY, zone: 'perimeter' as const }
-    }
-    if (side === 2) {
-      return { x: edgeX, y: length - inset - rng() * 2, zone: 'perimeter' as const }
-    }
-    return { x: inset + rng() * 2, y: edgeY, zone: 'perimeter' as const }
-  }
-
   return {
     x: clamp(rng() * width, 4, width - 4),
     y: clamp(rng() * length, 4, length - 4),
@@ -185,37 +275,15 @@ function patternShrubs(
   width: number,
   length: number,
   rng: () => number,
+  roads: RoadRect[] = [],
+  footprintRadius = 0.6,
 ): { x: number; y: number; zone: 'centre' | 'left' | 'right' | 'front' | 'back' | 'perimeter' | 'other' } {
   if (pattern === 'clustered') {
-    const clusters = [
-      [width * 0.35, length * 0.35],
-      [width * 0.65, length * 0.42],
-      [width * 0.5, length * 0.7],
-    ]
-    const cluster = clusters[index % clusters.length]
-    const offsetX = (rng() - 0.5) * 6
-    const offsetY = (rng() - 0.5) * 6
-
-    return {
-      x: clamp(cluster[0] + offsetX, 2, width - 2),
-      y: clamp(cluster[1] + offsetY, 2, length - 2),
-      zone: 'centre' as const,
-    }
+    return clusteredPoint(index, count, width, length, rng)
   }
 
   if (pattern === 'linear') {
-    const rows = Math.max(1, Math.round(Math.sqrt(count || 1)))
-    const row = Math.floor(index / rows)
-    const column = index % rows
-    const padding = 6
-    const x = padding + ((width - padding * 2) / Math.max(1, rows - 1)) * column + (rng() - 0.5) * 3
-    const y = padding + ((length - padding * 2) / Math.max(1, rows - 1)) * row + (rng() - 0.5) * 3
-
-    return {
-      x: clamp(x, 2, width - 2),
-      y: clamp(y, 2, length - 2),
-      zone: row % 2 === 0 ? 'left' : 'right',
-    }
+    return roadLinePoint(roads, index, count, width, length, rng, footprintRadius)
   }
 
   if (pattern === 'border') {
@@ -392,6 +460,80 @@ function generateTurfPatches(
   return patches
 }
 
+type RoadOrientation = 'h' | 'v'
+type RoadSeed = { x: number; y: number; width: number; height: number; orientation: RoadOrientation }
+
+// Spawns a branch road perpendicular to `parent`, starting from a point along the parent's span (an
+// "intersection") and reaching toward one side of the site — like a side street fanning off a junction,
+// rather than another full-span stripe parallel to everything else. `priorBranches` (branches already spawned
+// from this same parent) spreads new branch points out along the parent instead of clumping near each other.
+function branchRoadSeed(parent: RoadSeed, width: number, length: number, roadThickness: number, rng: () => number, priorBranches: number): RoadSeed {
+  const half = roadThickness / 2
+  const t = ((priorBranches + 1) * 0.6180339887 + rng() * 0.12) % 1
+
+  if (parent.orientation === 'h') {
+    const branchX = clamp(parent.x + half + t * Math.max(0, parent.width - roadThickness), half, width - half)
+    const parentY = parent.y + half
+    const towardTop = rng() < 0.5
+    const reach = 0.3 + rng() * 0.4
+    const span = towardTop ? parentY : length - parentY
+    const height = Math.max(roadThickness, span * reach)
+    const y = towardTop ? parentY - height : parentY
+    return { x: clamp(branchX - half, 0, width - roadThickness), y: clamp(y, 0, length - roadThickness), width: roadThickness, height, orientation: 'v' }
+  }
+
+  const branchY = clamp(parent.y + half + t * Math.max(0, parent.height - roadThickness), half, length - half)
+  const parentX = parent.x + half
+  const towardLeft = rng() < 0.5
+  const reach = 0.3 + rng() * 0.4
+  const span = towardLeft ? parentX : width - parentX
+  const roadWidth = Math.max(roadThickness, span * reach)
+  const x = towardLeft ? parentX - roadWidth : parentX
+  return { x: clamp(x, 0, width - roadThickness), y: clamp(branchY - half, 0, length - roadThickness), width: roadWidth, height: roadThickness, orientation: 'h' }
+}
+
+// Builds a small street network: the first two roads are full-span arterials crossing at right angles
+// (one horizontal, one vertical), and any further roads branch outward from a random existing road —
+// radiating from that intersection instead of stacking another parallel stripe.
+function buildRoadNetwork(count: number, width: number, length: number, roadThickness: number, rng: () => number): RoadSeed[] {
+  const seeds: RoadSeed[] = []
+  const branchCounts = new Map<number, number>()
+
+  for (let i = 0; i < count; i += 1) {
+    if (i === 0) {
+      const orientation: RoadOrientation = width >= length ? 'h' : 'v'
+      seeds.push(
+        orientation === 'h'
+          ? { x: 0, y: clamp(length * 0.5 - roadThickness / 2, 0, length - roadThickness), width, height: roadThickness, orientation }
+          : { x: clamp(width * 0.5 - roadThickness / 2, 0, width - roadThickness), y: 0, width: roadThickness, height: length, orientation },
+      )
+      continue
+    }
+
+    if (i === 1) {
+      const orientation: RoadOrientation = seeds[0].orientation === 'h' ? 'v' : 'h'
+      const t = 0.3 + rng() * 0.4
+      seeds.push(
+        orientation === 'h'
+          ? { x: 0, y: clamp(length * t - roadThickness / 2, 0, length - roadThickness), width, height: roadThickness, orientation }
+          : { x: clamp(width * t - roadThickness / 2, 0, width - roadThickness), y: 0, width: roadThickness, height: length, orientation },
+      )
+      continue
+    }
+
+    // Branch roads mostly fan out from the two main arterials (round-robin, so they spread across both axes
+    // instead of snowballing off each other into one corner); occasionally a branch grows off a prior branch
+    // for a deeper, more organic fan-out.
+    const parentIndex = rng() < 0.3 && seeds.length > 2 ? Math.floor(rng() * seeds.length) : i % 2
+    const parent = seeds[parentIndex]
+    const priorBranches = branchCounts.get(parentIndex) ?? 0
+    branchCounts.set(parentIndex, priorBranches + 1)
+    seeds.push(branchRoadSeed(parent, width, length, roadThickness, rng, priorBranches))
+  }
+
+  return seeds
+}
+
 export function generateLandscape(config: Partial<LandscapeConfig> = {}): GeneratedLandscape {
   const merged: LandscapeConfig = { ...DEFAULT_CONFIG, ...config }
   // Each feature owns its own identity + placement RNG stream, so adjusting one feature's count/pattern
@@ -405,23 +547,21 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
   const treePlacementRng = createRng(merged.seed ^ 0xc2b2ae35)
   const shrubPlacementRng = createRng(merged.seed ^ 0xfd7046c5)
   const turfPlacementRng = createRng(merged.seed ^ 0x1b873593)
+  const roadPlacementRng = createRng(merged.seed ^ 0x8b6cd1d7)
   getZones(merged.width, merged.length)
 
-  // Roads are parallel strips so they never overlap one another, and all other features avoid them.
-  const roads: BuildingItem[] = []
+  // Roads form a small street network: the first two cross at right angles, and any further roads branch
+  // outward from an existing intersection instead of stacking another parallel horizontal stripe.
   const roadThickness = Math.max(1.5, Math.min(merged.width, merged.length) * 0.045)
-  const horizontalRoads = merged.width >= merged.length || merged.roadCount === 1
-
-  for (let i = 0; i < merged.roadCount; i += 1) {
-    const slot = i + 1
-    if (horizontalRoads) {
-      const y = clamp((merged.length / (merged.roadCount + 1)) * slot - roadThickness / 2, 0, merged.length - roadThickness)
-      roads.push({ id: `road-${i}`, x: 0, y, width: merged.width, height: roadThickness, elevation: 0.09 })
-    } else {
-      const x = clamp((merged.width / (merged.roadCount + 1)) * slot - roadThickness / 2, 0, merged.width - roadThickness)
-      roads.push({ id: `road-${i}`, x, y: 0, width: roadThickness, height: merged.length, elevation: 0.09 })
-    }
-  }
+  const roadSeeds = buildRoadNetwork(merged.roadCount, merged.width, merged.length, roadThickness, roadPlacementRng)
+  const roads: BuildingItem[] = roadSeeds.map((seed, i) => ({
+    id: `road-${i}`,
+    x: seed.x,
+    y: seed.y,
+    width: seed.width,
+    height: seed.height,
+    elevation: 0.09,
+  }))
 
   // Buildings are placed first so vegetation placement can reject/resample points inside their footprint.
   const buildings: BuildingItem[] = []
@@ -480,12 +620,12 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
     const height = 3.5 + treeIdentityRng() * (14 - 3.5)
     const crownShape = treeShapes[Math.floor(treeIdentityRng() * treeShapes.length)]
     const footprintRadius = treeFootprintRadius(height, crownShape)
-    let point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng)
+    let point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng, roads, footprintRadius)
     for (let attempt = 0; isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, treeFootprints) && attempt < 25; attempt += 1) {
-      point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng)
+      point = patternPoint(pattern, i, merged.treeCount, merged.width, merged.length, treePlacementRng, roads, footprintRadius)
     }
     if (isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, treeFootprints)) {
-      point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, treeFootprints) }
+      point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, treeFootprints, point) }
     }
     const size: TreeItem['size'] = height < 7 ? 'small' : height < 10.5 ? 'medium' : 'large'
     trees.push({
@@ -509,12 +649,12 @@ export function generateLandscape(config: Partial<LandscapeConfig> = {}): Genera
     const pattern = merged.shrubPattern ?? 'random'
     const height = 0.11 + shrubIdentityRng() * (3.49 - 0.11)
     const footprintRadius = shrubFootprintRadius(height, shrubCrownShape)
-    let point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng)
+    let point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng, roads, footprintRadius)
     for (let attempt = 0; isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints]) && attempt < 25; attempt += 1) {
-      point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng)
+      point = patternShrubs(pattern, i, merged.shrubCount, merged.width, merged.length, shrubPlacementRng, roads)
     }
     if (isCircleBlocked(point.x, point.y, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints])) {
-      point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints]) }
+      point = { ...point, ...findFreeCirclePoint(merged.width, merged.length, footprintRadius, blockedRects, [...treeFootprints, ...shrubFootprints], point) }
     }
     shrubs.push({
       id: `shrub-${i}`,

@@ -125,12 +125,15 @@ function BuildingModel({ x, y, width, depth, height }: { x: number; y: number; w
   )
 }
 
-function RoadModel({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+function RoadModel({ x, y, width, height, index }: { x: number; y: number; width: number; height: number; index: number }) {
+  // Branch roads overlap the arterials they fan out from at intersections; without a per-road elevation
+  // nudge, those coplanar overlapping boxes z-fight and render as broken/inconsistent patches at the seam.
+  const elevation = 0.04 + index * 0.001
   return (
-    <group position={[x, 0.04, y]}>
+    <group position={[x, elevation, y]}>
       <mesh receiveShadow>
         <boxGeometry args={[width, 0.09, height]} />
-        <meshStandardMaterial color="#4f5257" roughness={0.9} />
+        <meshStandardMaterial color="#4f5257" roughness={0.9} polygonOffset polygonOffsetFactor={-index} polygonOffsetUnits={-index} />
       </mesh>
     </group>
   )
@@ -259,13 +262,14 @@ function LandscapeScene({
         <VoxelInstances instances={turfInstances} size={[1, 0.1, 1]} />
         <VoxelInstances instances={canopyInstances} size={[1, 0.5, 1]} />
 
-        {generated.roads.map((road) => (
+        {generated.roads.map((road, index) => (
           <RoadModel
             key={road.id}
             x={road.x + road.width / 2 - config.width / 2}
             y={road.y + road.height / 2 - config.length / 2}
             width={road.width}
             height={road.height}
+            index={index}
           />
         ))}
 

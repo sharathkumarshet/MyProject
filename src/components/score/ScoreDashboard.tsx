@@ -10,11 +10,11 @@ export function ScoreDashboard({ score }: { score: ScoreBreakdown }) {
         </span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-3 gap-2">
         {Object.entries(score.categories).map(([key, value]) => (
-          <div key={key} className="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{key}</p>
-            <p className="mt-2 text-2xl font-bold text-slate-100">{value}</p>
+          <div key={key} className="min-w-0 rounded-xl border border-slate-700 bg-slate-950/50 p-2">
+            <p className="truncate text-[9px] uppercase tracking-[0.16em] text-slate-400">{key}</p>
+            <p className="mt-1.5 truncate text-lg font-bold text-slate-100">{value}</p>
           </div>
         ))}
       </div>
