@@ -214,9 +214,6 @@ function patternPoint(
   roads: RoadRect[] = [],
   footprintRadius = 0.6,
 ) {
-  const cx = width / 2
-  const cy = length / 2
-
   if (pattern === 'centre') {
     return clusteredPoint(index, count, width, length, rng)
   }
@@ -464,9 +461,12 @@ type RoadOrientation = 'h' | 'v'
 type RoadSeed = { x: number; y: number; width: number; height: number; orientation: RoadOrientation }
 
 // Spawns a branch road perpendicular to `parent`, starting from a point along the parent's span (an
-// "intersection") and reaching toward one side of the site — like a side street fanning off a junction,
-// rather than another full-span stripe parallel to everything else. `priorBranches` (branches already spawned
-// from this same parent) spreads new branch points out along the parent instead of clumping near each other.
+// "intersection") and running the rest of the way to the site edge on one side — like a side street
+// fanning off a junction, rather than another full-span stripe parallel to everything else. Reaching all
+// the way to the edge (instead of stopping partway) guarantees every road segment is either attached to
+// another road at both ends or terminates at the site boundary, so nothing dangles in empty ground.
+// `priorBranches` (branches already spawned from this same parent) spreads new branch points out along the
+// parent instead of clumping near each other.
 function branchRoadSeed(parent: RoadSeed, width: number, length: number, roadThickness: number, rng: () => number, priorBranches: number): RoadSeed {
   const half = roadThickness / 2
   const t = ((priorBranches + 1) * 0.6180339887 + rng() * 0.12) % 1
@@ -475,9 +475,8 @@ function branchRoadSeed(parent: RoadSeed, width: number, length: number, roadThi
     const branchX = clamp(parent.x + half + t * Math.max(0, parent.width - roadThickness), half, width - half)
     const parentY = parent.y + half
     const towardTop = rng() < 0.5
-    const reach = 0.3 + rng() * 0.4
     const span = towardTop ? parentY : length - parentY
-    const height = Math.max(roadThickness, span * reach)
+    const height = Math.max(roadThickness, span)
     const y = towardTop ? parentY - height : parentY
     return { x: clamp(branchX - half, 0, width - roadThickness), y: clamp(y, 0, length - roadThickness), width: roadThickness, height, orientation: 'v' }
   }
@@ -485,9 +484,8 @@ function branchRoadSeed(parent: RoadSeed, width: number, length: number, roadThi
   const branchY = clamp(parent.y + half + t * Math.max(0, parent.height - roadThickness), half, length - half)
   const parentX = parent.x + half
   const towardLeft = rng() < 0.5
-  const reach = 0.3 + rng() * 0.4
   const span = towardLeft ? parentX : width - parentX
-  const roadWidth = Math.max(roadThickness, span * reach)
+  const roadWidth = Math.max(roadThickness, span)
   const x = towardLeft ? parentX - roadWidth : parentX
   return { x: clamp(x, 0, width - roadThickness), y: clamp(branchY - half, 0, length - roadThickness), width: roadWidth, height: roadThickness, orientation: 'h' }
 }
